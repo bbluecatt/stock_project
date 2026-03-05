@@ -1,0 +1,33 @@
+name: Stock AI Monitor Auto Run
+
+on:
+  schedule:
+    - cron: '0 1,4,7 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 pandas yfinance transformers torch
+
+      - name: Run script
+        run: python crawler2.py
+
+      - name: Commit and push if changed
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add stock_ai_deep_analysis.csv
+          git commit -m "Auto update data" || echo "No changes to commit"
+          git push
