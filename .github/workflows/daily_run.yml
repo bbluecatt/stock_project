@@ -22,7 +22,7 @@ jobs:
           pip install requests beautifulsoup4 pandas yfinance transformers torch
 
       - name: Run script
-        run: python crawler2.py
+        run: python crawler3.py
 
       - name: Commit and push if changed
         run: |
