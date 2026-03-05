@@ -19,7 +19,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests beautifulsoup4 pandas yfinance transformers torch
+          pip install requests beautifulsoup4 pandas yfinance transformers torch matplotlib line-bot-sdk
 
       - name: Run script
         env:
