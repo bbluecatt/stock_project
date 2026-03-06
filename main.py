@@ -30,7 +30,7 @@ nlp = pipeline("sentiment-analysis", model=MODEL_NAME)
 # ==========================================
 
 def get_accurate_stock_price(stock_id):
-    """確保抓到價格與漲跌幅"""
+    """確保抓到精確價格與漲跌幅"""
     try:
         stock = yf.Ticker(stock_id)
         df = stock.history(period="2d")
@@ -43,7 +43,7 @@ def get_accurate_stock_price(stock_id):
     return "N/A", "N/A"
 
 def draw_and_save_chart(file_name):
-    """讀取 CSV 畫圖，若無數據則生成預設圖防止報錯"""
+    """即使沒數據也生成一張圖，防止 Actions 存檔失敗"""
     plt.rcParams['font.sans-serif'] = ['Heiti TC', 'DejaVu Sans']
     plt.rcParams['axes.unicode_minus'] = False
     plt.figure(figsize=(10, 5))
@@ -53,10 +53,10 @@ def draw_and_save_chart(file_name):
         df['抓取時間'] = pd.to_datetime(df['抓取時間'])
         df = df.sort_values('抓取時間').tail(15)
         plt.plot(df['抓取時間'], df['當時股價'], color='tab:blue', marker='o', alpha=0.4)
-        plt.title(f'{TARGET_STOCK} AI Sentiment Report')
+        plt.title(f'{TARGET_STOCK} AI Sentiment Analysis')
     else:
-        plt.text(0.5, 0.5, 'Initializing Data...', ha='center')
-    
+        plt.text(0.5, 0.5, 'Data Initializing...', ha='center')
+        
     plt.savefig('trend.png')
 
 def send_line_notification(message, image_url=None):
@@ -70,7 +70,7 @@ def send_line_notification(message, image_url=None):
     except Exception as e: print(f"❌ LINE 失敗: {e}")
 
 # ==========================================
-# 3. 主程式邏輯
+# 3. 主程式流程
 # ==========================================
 
 def run_system():
@@ -95,7 +95,9 @@ def run_system():
 
     file_name = "stock_ai_deep_analysis.csv"
     
-    # ✨ 核心優化：如果沒有 CSV，就直接建立一個新的
+    # 無論如何都會生成圖片，解決 Actions 的報錯問題
+    draw_and_save_chart(file_name)
+
     if new_data:
         df = pd.DataFrame(new_data)
         if os.path.exists(file_name):
@@ -103,12 +105,10 @@ def run_system():
             df = pd.concat([old_df, df]).drop_duplicates(subset=["新聞標題"])
         df.to_csv(file_name, index=False, encoding="utf-8-sig")
         
-        draw_and_save_chart(file_name)
-        msg = f"🤖 台積電 AI 報告\n現價: {price} 元\n漲跌: {change}%\n狀態: 發現 {len(new_data)} 則新動態！"
+        msg = f"🤖 台積電 AI 報告\n現價: {price} 元\n漲跌: {change}%\n狀態: 發現 {len(new_data)} 則新消息！"
         send_line_notification(msg, IMG_URL)
     else:
-        # 心跳回報
-        draw_and_save_chart(file_name) # 確保圖檔存在
+        # 心跳回報：即使沒新新聞也告訴你漲跌
         heartbeat_msg = f"🤖 系統回報\n現價: {price} 元\n漲跌: {change}%\n狀態: 暫無新相關新聞。"
         send_line_notification(heartbeat_msg, None)
 
