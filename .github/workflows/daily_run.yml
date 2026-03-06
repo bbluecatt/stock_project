@@ -1,13 +1,15 @@
-name: Stock AI Monitor Auto Run
+name: Daily Stock AI Analysis
 
 on:
   schedule:
-    - cron: '0 1,4,7 * * *'
-  workflow_dispatch:
+    # 每天早上 9:00 執行 (UTC 1:00)
+    - cron: '0 1 * * *'
+  workflow_dispatch: # 讓你可以手動點擊執行
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -19,18 +21,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests beautifulsoup4 pandas yfinance transformers torch matplotlib line-bot-sdk
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 pandas yfinance transformers torch line-bot-sdk
 
-      - name: Run script
+      - name: Run analysis script
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python main.py
 
-      - name: Commit and push if changed
+      - name: Commit and push changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add stock_ai_deep_analysis.csv
-          git commit -m "Auto update data" || echo "No changes to commit"
-          git push
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update analysis data" && git push)
