@@ -15,14 +15,14 @@ from linebot.models import TextSendMessage, ImageSendMessage
 # ==========================================
 MODEL_NAME = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"
 TARGET_STOCK = "2330.TW"
-KEYWORDS = ["台積電", "TSMC", "2330", "半導體", "晶片", "營收", "法說"]
+KEYWORDS = ["台積電", "TSMC", "2330", "AI", "半導體", "晶片", "營收", "法說"]
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
 
 LINE_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_USER_ID = os.getenv('LINE_USER_ID')
 IMG_URL = "https://raw.githubusercontent.com/bbluecatt/stock_project/main/trend.png"
 
-print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚙️ 正在初始化 AI...")
+print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚙️ 正在啟動 AI 引擎...")
 nlp = pipeline("sentiment-analysis", model=MODEL_NAME)
 
 # ==========================================
@@ -30,6 +30,7 @@ nlp = pipeline("sentiment-analysis", model=MODEL_NAME)
 # ==========================================
 
 def get_accurate_stock_price(stock_id):
+    """確保抓到價格與漲跌幅"""
     try:
         stock = yf.Ticker(stock_id)
         df = stock.history(period="2d")
@@ -41,6 +42,23 @@ def get_accurate_stock_price(stock_id):
     except: pass
     return "N/A", "N/A"
 
+def draw_and_save_chart(file_name):
+    """讀取 CSV 畫圖，若無數據則生成預設圖防止報錯"""
+    plt.rcParams['font.sans-serif'] = ['Heiti TC', 'DejaVu Sans']
+    plt.rcParams['axes.unicode_minus'] = False
+    plt.figure(figsize=(10, 5))
+    
+    if os.path.exists(file_name):
+        df = pd.read_csv(file_name)
+        df['抓取時間'] = pd.to_datetime(df['抓取時間'])
+        df = df.sort_values('抓取時間').tail(15)
+        plt.plot(df['抓取時間'], df['當時股價'], color='tab:blue', marker='o', alpha=0.4)
+        plt.title(f'{TARGET_STOCK} AI Sentiment Report')
+    else:
+        plt.text(0.5, 0.5, 'Initializing Data...', ha='center')
+    
+    plt.savefig('trend.png')
+
 def send_line_notification(message, image_url=None):
     if not LINE_TOKEN or not LINE_USER_ID: return
     line_bot_api = LineBotApi(LINE_TOKEN)
@@ -48,50 +66,50 @@ def send_line_notification(message, image_url=None):
         line_bot_api.push_message(LINE_USER_ID, TextSendMessage(text=message))
         if image_url:
             line_bot_api.push_message(LINE_USER_ID, ImageSendMessage(image_url, image_url))
-        print("✅ LINE 推播成功")
+        print("✅ LINE 推送成功")
     except Exception as e: print(f"❌ LINE 失敗: {e}")
 
 # ==========================================
-# 3. 主程式
+# 3. 主程式邏輯
 # ==========================================
 
 def run_system():
     price, change = get_accurate_stock_price(TARGET_STOCK)
-    
-    # 暴力掃描標題
     url = f"https://tw.stock.yahoo.com/quote/{TARGET_STOCK}/news"
     resp = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(resp.text, "html.parser")
+    
+    # 暴力掃描標題
     items = soup.find_all(['h3', 'a'], class_=lambda x: x and any(c in x for c in ['Title', 'Py(14px)']))
     
     new_data = []
     for item in items:
         title = item.get_text().strip()
-        if len(title) > 10:
+        if len(title) > 10 and any(k in title for k in KEYWORDS):
             res = nlp(title[:128])[0]
             label = "Positive" if "1" in res['label'] or "pos" in res['label'].lower() else "Negative"
             new_data.append({
                 "抓取時間": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "新聞標題": title, "AI 情緒標籤": label, "當時股價": price, "漲跌": change
             })
-    
+
     file_name = "stock_ai_deep_analysis.csv"
     
-    # 不論有無新數據，這次都「強制回報」
+    # ✨ 核心優化：如果沒有 CSV，就直接建立一個新的
     if new_data:
         df = pd.DataFrame(new_data)
+        if os.path.exists(file_name):
+            old_df = pd.read_csv(file_name)
+            df = pd.concat([old_df, df]).drop_duplicates(subset=["新聞標題"])
         df.to_csv(file_name, index=False, encoding="utf-8-sig")
         
-        # 簡易繪圖確保不卡住
-        plt.figure(figsize=(10, 5))
-        plt.plot([1, 2, 3], [price, price, price]) # 暫時用墊檔圖確保 trend.png 存在
-        plt.savefig('trend.png')
-        
-        msg = f"🤖 台積電 AI 報告\n現價: {price} 元\n漲跌: {change}%\n狀態: 偵測到 {len(new_data)} 則動態！"
+        draw_and_save_chart(file_name)
+        msg = f"🤖 台積電 AI 報告\n現價: {price} 元\n漲跌: {change}%\n狀態: 發現 {len(new_data)} 則新動態！"
         send_line_notification(msg, IMG_URL)
     else:
         # 心跳回報
-        heartbeat_msg = f"🤖 系統回報\n現價: {price} 元\n漲跌: {change}%\n狀態: 暫無新新聞。"
+        draw_and_save_chart(file_name) # 確保圖檔存在
+        heartbeat_msg = f"🤖 系統回報\n現價: {price} 元\n漲跌: {change}%\n狀態: 暫無新相關新聞。"
         send_line_notification(heartbeat_msg, None)
 
 if __name__ == "__main__":
