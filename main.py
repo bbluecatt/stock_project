@@ -15,14 +15,15 @@ from linebot.models import TextSendMessage, ImageSendMessage
 # ==========================================
 MODEL_NAME = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"
 TARGET_STOCK = "2330.TW"
-KEYWORDS = ["台積電", "TSMC", "2330", "AI", "半導體", "晶片", "營收", "法說"]
+# 放寬關鍵字，確保「台積電」相關新聞一定會被抓到
+KEYWORDS = ["台積電", "TSMC", "2330", "半導體", "晶片", "AI"]
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
 
 LINE_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_USER_ID = os.getenv('LINE_USER_ID')
 IMG_URL = "https://raw.githubusercontent.com/bbluecatt/stock_project/main/trend.png"
 
-print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚙️ 啟動中...")
+print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚙️ 正在載入 AI 引擎...")
 nlp = pipeline("sentiment-analysis", model=MODEL_NAME)
 
 # ==========================================
@@ -42,7 +43,6 @@ def get_accurate_stock_price(stock_id):
     return "N/A", "N/A"
 
 def draw_and_save_chart(file_name):
-    """保證 trend.png 存在，解決 Actions 報錯"""
     plt.rcParams['font.sans-serif'] = ['Heiti TC', 'DejaVu Sans']
     plt.rcParams['axes.unicode_minus'] = False
     plt.figure(figsize=(10, 5))
@@ -53,7 +53,7 @@ def draw_and_save_chart(file_name):
         plt.plot(df['抓取時間'], df['當時股價'], color='tab:blue', marker='o', alpha=0.4)
         plt.title(f'{TARGET_STOCK} AI Report')
     else:
-        plt.text(0.5, 0.5, 'Initializing Data...', ha='center')
+        plt.text(0.5, 0.5, 'Initializing...', ha='center')
     plt.savefig('trend.png')
 
 def send_line_notification(message, image_url=None):
@@ -67,7 +67,7 @@ def send_line_notification(message, image_url=None):
     except Exception as e: print(f"❌ LINE 失敗: {e}")
 
 # ==========================================
-# 3. 主流程
+# 3. 主流程邏輯
 # ==========================================
 
 def run_system():
@@ -75,10 +75,17 @@ def run_system():
     url = f"https://tw.stock.yahoo.com/quote/{TARGET_STOCK}/news"
     resp = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(resp.text, "html.parser")
+    
+    # 暴力掃描標題標籤
     items = soup.find_all(['h3', 'a'], class_=lambda x: x and any(c in x for c in ['Title', 'Py(14px)']))
     
     new_data = []
+    # ✨ 修改點：設定最多抓取 20 則符合條件的新聞
+    max_news = 20
+    
     for item in items:
+        if len(new_data) >= max_news: break # 抓滿 20 則就收工
+        
         title = item.get_text().strip()
         if len(title) > 10 and any(k in title for k in KEYWORDS):
             res = nlp(title[:128])[0]
@@ -90,21 +97,24 @@ def run_system():
 
     file_name = "stock_ai_deep_analysis.csv"
     
-    # ✨ 核心修正：如果檔案不存在就創一個空的，防止 Actions 崩潰
+    # 自動建立檔案防止 Actions 報錯
     if not os.path.exists(file_name):
         pd.DataFrame(columns=["抓取時間", "新聞標題", "AI 情緒標籤", "當時股價", "漲跌"]).to_csv(file_name, index=False)
 
     if new_data:
         df = pd.DataFrame(new_data)
         old_df = pd.read_csv(file_name)
+        # 根據標題去重，確保不重複推播
         df = pd.concat([old_df, df]).drop_duplicates(subset=["新聞標題"])
         df.to_csv(file_name, index=False, encoding="utf-8-sig")
+        
         draw_and_save_chart(file_name)
-        msg = f"🤖 台積電 AI 報告\n現價: {price} 元\n漲跌: {change}%\n狀態: 發現新動態！"
+        msg = f"🤖 台積電 AI 報告\n現價: {price} 元\n漲跌: {change}%\n狀態: 發現 {len(new_data)} 則動態！"
         send_line_notification(msg, IMG_URL)
     else:
         draw_and_save_chart(file_name)
-        heartbeat_msg = f"🤖 系統回報\n現價: {price} 元\n漲跌: {change}%\n狀態: 暫無新新聞。"
+        # 心跳回報機制
+        heartbeat_msg = f"🤖 系統回報\n現價: {price} 元\n漲跌: {change}%\n狀態: 暫無新相關新聞。"
         send_line_notification(heartbeat_msg, None)
 
 if __name__ == "__main__":
